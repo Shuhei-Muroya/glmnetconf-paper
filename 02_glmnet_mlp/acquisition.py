@@ -15,9 +15,7 @@ from gpytorch.mlls import ExactMarginalLogLikelihood
 import numpy as np
 import optuna
 import torch
-#from optuna.integration import BoTorchSampler
 
-#optuna.logging.set_verbosity(optuna.logging.CRITICAL)
 
 def PI_candidates_func(
     train_x, train_obj, train_con, bounds, pending_x
@@ -29,7 +27,7 @@ def PI_candidates_func(
     mll = ExactMarginalLogLikelihood(model.likelihood, model)
     fit_gpytorch_mll(mll)
 
-    acqf = ProbabilityOfImprovement( #真の期待改善りょう!!
+    acqf = ProbabilityOfImprovement(
         model=model,
         best_f=train_obj.max(),
     )
@@ -66,7 +64,7 @@ def EI_candidates_func(
     mll = ExactMarginalLogLikelihood(model.likelihood, model)
     fit_gpytorch_mll(mll)
 
-    acqf = ExpectedImprovement( #真の期待改善りょう!!
+    acqf = ExpectedImprovement(
         model=model,
         best_f=train_obj.max(),
     )
@@ -103,7 +101,7 @@ def LCB_candidates_func(
 
     acqf = UpperConfidenceBound( 
         model=model,
-        beta=0.1,#信頼区間の幅
+        beta=0.1,# width of the confidence interval
     )
 
     standard_bounds = torch.zeros_like(bounds)
@@ -136,10 +134,10 @@ def LCB_logn_candidates_func(
     mll = ExactMarginalLogLikelihood(model.likelihood, model)
     fit_gpytorch_mll(mll)
     
-    n_trials = train_x.shape[0] + 1 - 10 #n_traialsには初期の10こが入ってるから！
+    n_trials = train_x.shape[0] + 1 - 10 # n_trials includes the 10 initial trials
     beta = 0.1 * np.log(n_trials)
     
-    acqf = UpperConfidenceBound( #真の期待改善りょう!!
+    acqf = UpperConfidenceBound(
         model=model,
         beta=beta,
     )

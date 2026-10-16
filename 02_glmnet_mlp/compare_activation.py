@@ -6,11 +6,10 @@ Input : ../01_summary_dataset/summary_dataset.csv.gz
 Output: results_activation_<ACTIVATION>/
 Run from this directory:  python compare_activation.py
 """
-# ========= Eigenvalue特徴量数のablation × 活性化関数切り替え版 =========
-# top/bottom10 -> 5 -> 1 の順に実行
-# valid版：BOもepoch選択もVALIDで評価、最後にTEST
-# 活性化関数は先頭の ACTIVATION で切り替え（"swish" / "relu" / "tanh"）
-# 獲得関数は acquisition.py で定義
+# ========= Same as train_glmnet_mlp.py with a selectable activation function =========
+# Bayesian optimisation and epoch selection use VALID; the final evaluation uses TEST
+# the activation is set by ACTIVATION ("swish" / "relu" / "tanh")
+# the acquisition function is defined in acquisition.py
 from acquisition import EI_candidates_func
 
 import optuna
@@ -28,32 +27,32 @@ import copy
 import matplotlib.pyplot as plt
 
 # =========================
-# 設定
+# Settings
 # =========================
-# ★ 活性化関数の切り替え："swish" / "relu" / "tanh"
-#    relu版なら "relu"、tanh版なら "tanh" にするだけ。フォルダ名にも反映される。
+# activation function: "swish" / "relu" / "tanh"
+#    (also used in the output folder name)
 ACTIVATION = "tanh"
 
 filename        = "../01_summary_dataset/summary_dataset"
 batch_size      = 256
-eps             = 0          # log(0)回避用（必要なら正の値を設定）
+eps             = 0          # to avoid log(0) (set a positive value if needed)
 n_bo_trials     = 500
 max_epochs      = 1000
-patience        = 100        # early stopping: VALID RMSEがこのエポック数改善しなければ停止
+patience        = 100        # early stopping: stop if the VALID RMSE does not improve for this many epochs
 seed            = 1
 
-# ★ 保存先ベースフォルダに活性化関数名を付与
+# output folder includes the activation name
 foldername_base = f"results_activation_{ACTIVATION}"
 
-# ここを変えるだけでeigenvalue特徴量数のパターンを追加・変更できる
-# 例: [10, 5, 1] -> top10/bottom10 が終わった後に top5/bottom5, 最後に top1/bottom1
+# numbers of eigenvalue features to run, in this order
+# e.g. [10, 5, 1]: top/bottom 10, then top/bottom 5, then top/bottom 1
 EIG_K_LIST = [10]
 
 y_colname = ['time_glmnet', 'SPE_glmnet']
 
 
 def make_x_colname(eig_k):
-    """eig_k個のtop/bottom eigenvalue特徴量を使う説明変数リストを動的生成"""
+    """Input columns using the top/bottom eig_k eigenvalue features."""
     return (
         ['n', 'p']
         + [f'sample_ev_top{i}'    for i in range(1, eig_k + 1)]
@@ -63,14 +62,14 @@ def make_x_colname(eig_k):
 
 
 # =========================
-# 活性化関数の定義・レジストリ
+# Activation functions
 # =========================
 class Swish(nn.Module):
     def forward(self, x):
         return x * torch.sigmoid(x)
 
 
-# 名前 -> 活性化関数クラス（呼び出すとModuleを生成するファクトリとして使う）
+# name -> activation class (called to create the module)
 ACTIVATIONS = {
     "swish": Swish,
     "relu":  nn.ReLU,
@@ -82,9 +81,9 @@ if ACTIVATION not in ACTIVATIONS:
 activation_cls = ACTIVATIONS[ACTIVATION]
 
 
-# GPU設定
-# gpu_id: 使用するGPUのインデックス（nvidia-smi で確認）
-# RTX PRO 6000 (sm_120) は PyTorch 2.6 非対応のため、A400 (GPU 1, sm_86) を使用
+# GPU
+# gpu_id: index of the GPU (see nvidia-smi)
+# (the RTX PRO 6000 (sm_120) is not supported by PyTorch 2.6, so the A400 (GPU 1, sm_86) was used)
 gpu_id = 1
 if torch.cuda.is_available() and gpu_id < torch.cuda.device_count():
     device = torch.device(f'cuda:{gpu_id}')
@@ -98,7 +97,7 @@ if device.type == 'cuda':
 os.makedirs(foldername_base, exist_ok=True)
 
 # =========================
-# モデル定義（活性化関数を外部から注入）
+# Model (activation passed as an argument)
 # =========================
 class Net(nn.Module):
     def __init__(self, input_size, hidden_sizes, output_size, activation_cls):
@@ -116,7 +115,7 @@ class Net(nn.Module):
 
 
 # =========================
-# seed固定
+# Fix the seed
 # =========================
 def set_seed(s):
     torch.manual_seed(s)
@@ -128,7 +127,7 @@ def set_seed(s):
 
 
 # =========================
-# 可視化関数（列ごとのRMSEを返す）
+# Plot of predictions vs observations (returns the RMSE of each column)
 # =========================
 def plot_predictions_vs_observations(y_df, predictions, folder_name, name=""):
     os.makedirs(folder_name, exist_ok=True)
@@ -157,7 +156,7 @@ def plot_predictions_vs_observations(y_df, predictions, folder_name, name=""):
 
 
 # =========================
-# データ読み込み・行分割（eig_kに依存しないので一度だけ実施）
+# Read the data and split the rows (independent of eig_k, done once)
 # =========================
 csv_file_path = f"{filename}.csv.gz"   # pandas reads gzip directly
 combined_df = pd.read_csv(csv_file_path)
@@ -174,7 +173,7 @@ test_df  = remaining_df.drop(valid_df.index)
 
 print(f"Train: {train_df.shape}, Valid: {valid_df.shape}, Test: {test_df.shape}")
 
-# yはeig_kに依存しないので、こちらも一度だけ処理
+# y does not depend on eig_k, so it is processed once
 y_train = train_df[y_colname]
 y_valid = valid_df[y_colname]
 y_test  = test_df[y_colname]
@@ -195,8 +194,8 @@ y_valid_tensor = torch.tensor(y_valid_scaled, dtype=torch.float32).view(-1, num_
 y_test_tensor  = torch.tensor(y_test_scaled,  dtype=torch.float32).view(-1, num_q).to(device)
 
 # =========================
-# BOのobjective（closureでeig_kごとに必要な変数を渡す）
-# 活性化関数クラスもclosureで渡す
+# Objective of the Bayesian optimisation (variables for each eig_k passed via a closure;
+# the activation class is passed in the same way)
 # =========================
 def make_objective(num_p_, num_q_, train_loader_, x_valid_tensor_, y_valid_tensor_, device_, activation_cls_):
     def objective(trial):
@@ -230,10 +229,10 @@ def make_objective(num_p_, num_q_, train_loader_, x_valid_tensor_, y_valid_tenso
 optuna.logging.set_verbosity(optuna.logging.WARNING)
 
 # =========================
-# eig_kごとのループ本体: top10 -> top5 -> top1 の順に実行
+# Main loop over eig_k
 # =========================
 summary_rows     = []
-scaled_rmse_rows = []   # 標準化RMSE（time / spe / mean）をeigen別に記録するリスト
+scaled_rmse_rows = []   # standardised RMSE (time / SPE / mean) for each eig_k
 
 for eig_k in EIG_K_LIST:
     print("\n" + "=" * 60)
@@ -252,7 +251,7 @@ for eig_k in EIG_K_LIST:
 
     num_p = x_train.shape[1]
 
-    # スケーリング（X）はeig_kごとに個別にfit
+    # scaler for X fitted separately for each eig_k
     scaler_x = StandardScaler()
     x_train_scaled = scaler_x.fit_transform(x_train)
     x_valid_scaled = scaler_x.transform(x_valid)
@@ -279,7 +278,7 @@ for eig_k in EIG_K_LIST:
 
     print(f"Train batches: {len(train_loader)}, Valid batches: {len(valid_loader)}, Test batches: {len(test_loader)}")
 
-    # ---- 1) Optuna で BO（VALID評価） ----
+    # ---- 1) Bayesian optimisation with Optuna (evaluated on VALID) ----
     sampler_EI = optuna.integration.BoTorchSampler(candidates_func=EI_candidates_func)
     db_path    = os.path.join(foldername, f"nas_glmnet_valid_{ACTIVATION}_eig{eig_k}.db")
 
@@ -303,7 +302,7 @@ for eig_k in EIG_K_LIST:
     for k, v in trial.params.items():
         print(f"  {k}: {v}")
 
-    # ---- 2) 本番学習（early stopping付き） ----
+    # ---- 2) Final training (with early stopping) ----
     best_params   = trial.params
     n_layers      = best_params['n_layers']
     hidden_sizes  = [best_params[f'n_units_l{i}'] for i in range(n_layers)]
@@ -352,7 +351,7 @@ for eig_k in EIG_K_LIST:
 
     print(f"Best epoch (by VALID): {best_epoch}, RMSE: {best_val_rmse:.6f}")
 
-    # ---- 3) ベストモデル保存 -> TEST評価 ----
+    # ---- 3) Save the best model -> evaluate on TEST ----
     best_model = Net(num_p, hidden_sizes, num_q, activation_cls).to(device)
     best_model.load_state_dict(best_model_state)
 
@@ -368,7 +367,7 @@ for eig_k in EIG_K_LIST:
         'x_colname'       : x_colname,
         'y_colname'       : y_colname,
         'eig_k'           : eig_k,
-        'activation'      : ACTIVATION,   # ★ 活性化関数名も記録
+        'activation'      : ACTIVATION,   # activation name
     }
     ckpt_path = os.path.join(foldername, f"best_model_glmnet_valid_{ACTIVATION}_eig{eig_k}.pth")
     torch.save(checkpoint, ckpt_path)
@@ -386,7 +385,7 @@ for eig_k in EIG_K_LIST:
     rmse_test_orig = np.sqrt(mean_squared_error(y_test, pred_orig))
     print(f"[TEST] RMSE (original): {rmse_test_orig:.6f}")
 
-    # scaled版のplot戻り値も捕捉（target別の標準化RMSEを取得）
+    # standardised RMSE of each target from the scaled plot
     y_test_scaled_df = pd.DataFrame(y_test_scaled, columns=y_test.columns)
     rmse_per_target_scaled = plot_predictions_vs_observations(
         y_test_scaled_df, pred_test, folder_name=foldername, name="scaled"
@@ -395,7 +394,7 @@ for eig_k in EIG_K_LIST:
         y_test, pred_orig, folder_name=foldername, name="orig"
     )
 
-    # 標準化RMSE（time / spe / その平均）をeigen別に記録
+    # record the standardised RMSE (time / SPE / mean) for this eig_k
     scaled_row = {'eig_k': eig_k}
     for c in y_colname:
         scaled_row[f'{c}_rmse_scaled'] = rmse_per_target_scaled[c]
@@ -415,10 +414,10 @@ for eig_k in EIG_K_LIST:
     })
 
 # =========================
-# 4) ablation結果のまとめをCSVで保存
+# 4) Save the summary
 # =========================
 summary_df = pd.DataFrame(summary_rows)
-summary_df.insert(0, 'activation', ACTIVATION)   # ★ どの活性化関数かを列に残す
+summary_df.insert(0, 'activation', ACTIVATION)   # activation name as a column
 summary_path = os.path.join(foldername_base, f"eigenvalue_ablation_summary_{ACTIVATION}.csv")
 summary_df.to_csv(summary_path, index=False)
 print("\n" + "=" * 60)
@@ -427,13 +426,13 @@ print(summary_df)
 print(f"Saved summary to: {summary_path}")
 
 # =========================
-# 5) 標準化RMSE（time / spe / mean）を eigen別でCSV保存
-#    mean が小さい順にソートして最良のeigenを選びやすくする
+# 5) Save the standardised RMSE (time / SPE / mean) for each eig_k,
+#    sorted by the mean (smallest first)
 # =========================
 scaled_rmse_df = pd.DataFrame(scaled_rmse_rows).sort_values(
     'mean_rmse_scaled'
 ).reset_index(drop=True)
-scaled_rmse_df.insert(0, 'activation', ACTIVATION)   # ★ 活性化関数名を列に残す
+scaled_rmse_df.insert(0, 'activation', ACTIVATION)   # activation name as a column
 scaled_rmse_path = os.path.join(foldername_base, f"eigenvalue_scaled_rmse_{ACTIVATION}.csv")
 scaled_rmse_df.to_csv(scaled_rmse_path, index=False)
 print("\n" + "=" * 60)

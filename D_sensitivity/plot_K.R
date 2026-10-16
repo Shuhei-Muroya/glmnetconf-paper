@@ -7,7 +7,7 @@ library(dplyr)
 library(ggplot2)
 source("R/load_results.R")
 
-# ===== 設定 =====
+# ===== settings =====
 result_dir  <- file.path("D_sensitivity", "results", "K")
 save_dir    <- file.path("D_sensitivity", "figures")
 dir.create(save_dir, recursive = TRUE, showWarnings = FALSE)
@@ -24,7 +24,7 @@ if (!is.null(results_K$errors)) print(table(results_K$errors$error_msg))
 
 all_K <- results_K$all_combined
 
-# ===== 2. 設定ラベル (データから作成, SNR の大きい順) =====
+# ===== 2. Setting labels (from the data, larger SNR first) =====
 setting_table <- all_K %>%
   distinct(rho, snr) %>%
   arrange(desc(snr), desc(rho)) %>%
@@ -43,7 +43,7 @@ all_K <- all_K %>%
     time_total = time_tune + time_glmnet
   )
 
-# 確認: (n, p, setting, K) ごとの件数 (想定は各 100)
+# check: number of rows per (n, p, setting, K) (100 each)
 print(all_K %>% count(n, p, setting, K) %>% pull(n) %>% table())
 
 setting_colors <- setNames(setting_palette[seq_len(nrow(setting_table))],
@@ -52,13 +52,13 @@ setting_labels <- setNames(parse(text = setting_table$setting_label),
                            setting_table$setting)
 K_labels <- format(K_levels, big.mark = ",", scientific = FALSE, trim = TRUE)
 
-# ===== 3. 結果が存在しない (n, p) パネル =====
+# ===== 3. (n, p) panels without results =====
 missing_panels <- expand.grid(n = sort(unique(all_K$n)),
                               p = sort(unique(all_K$p))) %>%
   anti_join(distinct(all_K, n, p), by = c("n", "p"))
 print(missing_panels)
 
-# ===== 4. プロット関数 (縦軸の変数を切り替え可能) =====
+# ===== 4. Plot function (y variable selectable) =====
 make_K_boxplot <- function(df, y_var, y_label, log_y = TRUE) {
   g <- ggplot(df, aes(x = K_f, y = .data[[y_var]], fill = setting)) +
     geom_rect(data = missing_panels,
@@ -87,7 +87,7 @@ ggsave(file.path(save_dir, "fig14_spe_by_K.pdf"), p_spe,
        width = panel_w_cm * n_cols, height = panel_h_cm * n_rows,
        units = "cm", limitsize = FALSE)
 
-# ===== 6. 集計表 =====
+# ===== 6. Summary table =====
 summary_K <- all_K %>%
   group_by(setting, n, p, K) %>%
   summarise(

@@ -22,12 +22,12 @@ files_and_titles = [
 for file_name, save_name in files_and_titles:
     file_path = os.path.join(results_dir, file_name)
 
-    # 1. データの読み込み
+    # 1. Read the reconstruction
     df = pd.read_csv(file_path, header=0)
     raw_values = df.apply(pd.to_numeric, errors='coerce').values
     raw_values = raw_values.flatten()
 
-    # 2. Rの関数と同じロジックで0-255にスケーリング
+    # 2. Rescale to [0, 255] (same as rescale_255() in R)
     v_min = raw_values.min()
     v_max = raw_values.max()
     if v_max != v_min:
@@ -35,15 +35,15 @@ for file_name, save_name in files_and_titles:
     else:
         scaled_values = raw_values - v_min
 
-    # 3. 32x32にリシェイプ
+    # 3. Reshape to 32 x 32
     image_data = scaled_values.reshape(32, 32)
 
-    # 4. 画像としてプロット（スケーリング済みなのでvmin=0, vmax=255で固定）
+    # 4. Plot as an image (already rescaled, so vmin = 0, vmax = 255)
     plt.figure(figsize=(4, 4))
     plt.imshow(image_data, cmap='gray', vmin=0, vmax=255)
     plt.axis('off')
 
-    # 5. 保存
+    # 5. Save
     save_path = os.path.join(figures_dir, save_name)
     plt.savefig(save_path, format='pdf', bbox_inches='tight', pad_inches=0)
     plt.close()

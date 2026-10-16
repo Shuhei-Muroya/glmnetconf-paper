@@ -23,8 +23,8 @@ library(dplyr)
 generate_sigma_wrapper <- function(p, recipe, seed) {
   struct <- recipe$sigma_struct
   
-  # recipe (1行分のデータフレーム) から各値を取り出す
-  # NAが入っている可能性があるので、必要な時だけ使う
+  # values are taken from one row of the recipe;
+  # columns that are NA are used only where needed
   if (struct == "compound") {
     return(generate_compound_sigma(p, rho = recipe$rho))
   } else if (struct == "AR") {
@@ -34,26 +34,24 @@ generate_sigma_wrapper <- function(p, recipe, seed) {
   } else if (struct == "ba_hub") {
     return(generate_ba_hub_sigma(p, m = recipe$m, seed = seed))
   } else if (struct == "block") {
-    # block_p はここでは「ブロック数」として扱う
+    # block_p is the number of blocks
     return(generate_block_sigma(p, n_blocks = recipe$block_p, seed = seed))
   }
 }
 
-# random
-#sigma_list<-list(f1=sigma1,f2=sigma2,f3=random_matrix_sigma_sparse,f4=generate_ba_hub_sigma,f5=generate_block_sigma)
 
 
 
 get_top_bottom_10 <- function(ev) {
   list(
     top10 = ev[1:min(10, length(ev))],
-    bottom10 = rev(tail(ev, min(10, length(ev)))) # 小さい順
+    bottom10 = rev(tail(ev, min(10, length(ev)))) # smallest first
   )
 }
 
 
 
-##Coef 係数の関数
+## Coefficient vectors
 coef1 <- function(p, sparse_ratio = 0.9) {
   beta <- rep(0, p)
   n_active <- round(p * (1 - sparse_ratio))
@@ -80,22 +78,22 @@ coef <- function(p, sparse_ratio = 0.9) {
   return(beta)
 }
 
-# p に基づいて 4 種類の sparse_ratio を返す関数
+# Five sparsity levels of beta (fraction of zeros) for a given p
 get_sparse_rates <- function(p) {
-  # 例: log(p) / p non 0
+  # 1. log(p) nonzero coefficients
   s_log <- max(1, round(log(p))) 
   rate_log <- 1 - (s_log / p)
   
-  # 2. 中間設定1 (O(sqrt(p)))
+  # 2. sqrt(p) nonzero coefficients
   s_sqrt <- max(1, round(sqrt(p)))
   rate_sqrt <- 1 - (s_sqrt / p)
   
-  # 3. 中間設定2 (1/20 = 5% が非ゼロ)
+  # 3-5. 10%, 30% and 50% nonzero coefficients
   rate_10 <- 0.90
   rate_30<-0.7
   rate_50<-0.5
   
-  # 念のため、すべて 1 未満になるように調整（pが極端に小さい場合用）
+  # keep all rates below 1 (for very small p)
   return(pmin(0.99, c(rate_log, rate_sqrt, rate_10,rate_30,rate_50)))
 }
 
@@ -103,17 +101,17 @@ get_sparse_rates <- function(p) {
 gen_data_flexible <- function(recipe, seed, n_test = 100) {
   set.seed(seed)
   
-  # 1. パラメータの抽出
+  # 1. Parameters
   n <- as.numeric(recipe$n)
   p <- as.numeric(recipe$p)
   snr <- as.numeric(recipe$snr)
   x_dis <- as.numeric(recipe$x_dis_type)
   beta_struct <- as.numeric(recipe$beta_struct)
   
-  # 2. 共分散行列 Sigma の生成（潜在ガウス空間 Z の共分散：生成と true_ev に使用）
+  # 2. Covariance matrix Sigma (of the latent Gaussian Z; used for generation and true_ev)
   sigma <- generate_sigma_wrapper(p, recipe, seed)
   
-  # 3. 係数ベクトルの生成
+  # 3. Coefficient vector
   sparse_rates <- get_sparse_rates(p)
   target_rate  <- sparse_rates[as.numeric(recipe$beta_type)]
   if (beta_struct == 1) {
@@ -122,33 +120,33 @@ gen_data_flexible <- function(recipe, seed, n_test = 100) {
     beta <- coef(p, sparse_ratio = target_rate)
   }
   
-  # 4. デザイン行列 X の生成
+  # 4. Design matrix X
   N_total <- n + n_test
   mu <- rep(0, p)
   
   if (x_dis == 1) {
-    # 正規分布
+    # multivariate normal
     X_all <- mvrnorm(N_total, mu, sigma)
   } else if (x_dis == 2) { # lognormal
     Z     <- mvrnorm(N_total, mu, sigma)
     X_all <- exp(Z)
-    # n_comp=0 の心配なし（全サンプル同一成分）
-    # 列標準化は共通処理で実施
+    # single component, so no empty-component issue;
+    # column scaling is done below for all designs
     
-  } else if (x_dis == 3) { # 混合正規（bimodal）
+  } else if (x_dis == 3) { # mixture of normals (bimodal)
     d_mix <- 0.5
     
-    # 第2成分の平均: Σの第1主成分方向にマハラノビス距離 d_mix
+    # mean of the second component: shifted by d_mix along the first principal direction of Sigma
     ev      <- eigen(sigma)
     v1      <- ev$vectors[, 1]
     lambda1 <- ev$values[1]
     mu2     <- d_mix * sqrt(lambda1) * v1
     
-    # 等重み（eps=0.5）でベルヌーイ割り当て
+    # equal-weight Bernoulli assignment (eps = 0.5)
     eps  <- 0.5
     comp <- rbinom(N_total, 1, eps)
     
-    # ② 保険: n_comp1=0 または n_comp2=0 のとき最低1件ずつ保証
+    # safeguard: at least one observation in each component
     if (sum(comp == 0) == 0) comp[1]        <- 0L
     if (sum(comp == 1) == 0) comp[N_total]  <- 1L
     
@@ -162,23 +160,23 @@ gen_data_flexible <- function(recipe, seed, n_test = 100) {
     X_all[comp == 0, ] <- X_comp1
     X_all[comp == 1, ] <- X_comp2
     
-  } else if (x_dis == 4) { # 非線形因子モデル（因子共有型）
+  } else if (x_dis == 4) { # nonlinear factor model (shared factors)
     gamma <- 0.5  
     m_nl  <- max(2L, floor(p / 5))
     
-    # --- 線形部分 ---
+    # --- linear part ---
     X_linear <- mvrnorm(N_total, mu, sigma)
     
-    # --- 因子割り当て ---
+    # --- factor assignment ---
     factor_assign <- sample(seq_len(m_nl), p, replace = TRUE)
     
-    # --- 因子行列: N_total × m_nl ---
+    # --- factor matrix: N_total x m_nl ---
     C_matrix <- matrix(rnorm(N_total * m_nl), N_total, m_nl)
     
-    # --- 非線形変換関数をランダム選択（変数 j ごと）---
+    # --- nonlinear function chosen at random for each variable j ---
     h_choice <- sample(c("sq", "tanh", "exp"), p, replace = TRUE)
     
-    # --- ③ 非線形部分（ベクトル化・for ループなし）---
+    # --- nonlinear part (vectorised) ---
     X_nonlinear <- matrix(0, N_total, p)
     
     idx_sq   <- which(h_choice == "sq")
@@ -193,7 +191,7 @@ gen_data_flexible <- function(recipe, seed, n_test = 100) {
       X_nonlinear[, idx_exp]  <- exp(C_matrix[,  factor_assign[idx_exp],  drop = FALSE])
     
     X_all <- X_linear + gamma * X_nonlinear
-    # ↑ 列標準化は共通処理（sweep）で実施
+    # column scaling is done below (sweep)
   } else {
     nu <- 5  # degrees of freedom
     
@@ -202,21 +200,21 @@ gen_data_flexible <- function(recipe, seed, n_test = 100) {
     X_all <- Z / sqrt(W / nu)
   }
   
-  # --- 全パターン共通：列スケール標準化（分散1へ。中心化はしない）---
-  # 理由: SNR・固有値特徴量・SPE をパターン間で揃えるため。
-  #       中心化は glmnet が内部で行うため生成段階では行わない。
+  # --- all designs: scale columns to unit variance (no centring) ---
+  # so that SNR, eigenvalue features and SPE are comparable across designs;
+  # centring is done inside glmnet.
   col_sd <- apply(X_all, 2, sd)
-  col_sd[col_sd == 0] <- 1                    # 退化列の保険（ゼロ割回避）
+  col_sd[col_sd == 0] <- 1                    # guard against constant columns (division by zero)
   X_all  <- sweep(X_all, 2, col_sd, FUN = "/")
   
-  # 訓練データとテストデータの分割
+  # training / test split
   x      <- X_all[1:n, ]
   xtest  <- X_all[(n + 1):N_total, ]
   
-  # 5. 応答変数 y の生成（SNRに基づくノイズ付加）
-  # SNR = Var(Xβ) / σ^2 で定義。
-  # Var(Xβ) は標準化後デザインの標本共分散 S を用いた β'Sβ に等しい
-  # （ガウス設計では β'Σβ に一致、非ガウス設計では変換後の実共分散を反映）。
+  # 5. Response y with noise determined by the SNR
+  # SNR = Var(X beta) / sigma^2, where Var(X beta) = beta' S beta with S the sample
+  # covariance of the scaled design (beta' Sigma beta for Gaussian designs;
+  # the actual covariance after the transformation for non-Gaussian designs).
   signal     <- x %*% beta
   signal_var <- as.numeric(var(as.vector(signal)))
   noise_sd   <- sqrt(signal_var / snr)
@@ -225,17 +223,17 @@ gen_data_flexible <- function(recipe, seed, n_test = 100) {
   y      <- x     %*% beta + errors[1:n]
   ytest  <- xtest %*% beta + errors[(n + 1):N_total]
   
-  # 6. 特徴量（固有値）の抽出
-  # 真の共分散行列の固有値（Σ 由来。生成と同じ潜在空間）
+  # 6. Eigenvalue features
+  # eigenvalues of the true covariance matrix (Sigma, latent space)
   true_ev_all <- eigen(sigma, only.values = TRUE)$values
   true_ev     <- get_top_bottom_10(true_ev_all)
   
-  # サンプル共分散行列の固有値（標準化後の X 由来）
+  # eigenvalues of the sample covariance matrix (of the scaled X)
   sample_sigma  <- (t(x) %*% x) / n
   sample_ev_all <- eigen(sample_sigma, only.values = TRUE)$values
   sample_ev     <- get_top_bottom_10(sample_ev_all)
   
-  # 全てをリストにまとめて返す
+  # return everything as a list
   return(list(
     x = x, y = y, xtest = xtest, ytest = ytest,
     beta = beta,
@@ -261,19 +259,18 @@ gen_data_flexible <- function(recipe, seed, n_test = 100) {
 gen_data_flexible_v1 <- function(recipe, seed, n_test = 100) {
   set.seed(seed)
   
-  # 1. パラメータの抽出
+  # 1. Parameters
   n <- as.numeric(recipe$n)
   p <- as.numeric(recipe$p)
   snr <- as.numeric(recipe$snr)
   x_dis <- as.numeric(recipe$x_dis_type)
   beta_struct<-as.numeric(recipe$beta_struct)
   
-  # 2. 共分散行列 Sigma の生成
-  # 以前作成した generate_sigma_wrapper を利用
+  # 2. Covariance matrix Sigma
   sigma <- generate_sigma_wrapper(p, recipe, seed)
   
-  # 3. 係数ベクトルの生成
-  # beta_type (1:log, 2:sqrt, 3:5%, 4:10%, 5:20%,6:30%,7:50%) に応じて比率を決定
+  # 3. Coefficient vector
+  # beta_type 1-5: log(p), sqrt(p), 10%, 30%, 50% nonzero coefficients
   sparse_rates <- get_sparse_rates(p)
   target_rate <- sparse_rates[as.numeric(recipe$beta_type)]
   if(beta_struct==1){
@@ -282,12 +279,12 @@ gen_data_flexible_v1 <- function(recipe, seed, n_test = 100) {
     beta <- coef(p, sparse_ratio = target_rate)
   }
   
-  # 4. デザイン行列 X の生成
+  # 4. Design matrix X
   N_total <- n + n_test
   mu <- rep(0, p)
   
   if (x_dis == 1) {
-    # 正規分布
+    # multivariate normal
     X_all <- mvrnorm(N_total, mu, sigma)
   }else if (x_dis == 2) {#lognormal
     Z <- mvrnorm(N_total, mu, sigma)
@@ -300,7 +297,7 @@ gen_data_flexible_v1 <- function(recipe, seed, n_test = 100) {
     n_contam <- rbinom(1, N_total, eps)
     n_clean  <- N_total - n_contam
     
-    # 乱数の呼び出し順序を元コードと完全に一致させる
+    # keep the order of random number calls identical to the original code
     X_clean <- mvrnorm(n_clean, mu, sigma)
     if (n_contam > 0) {
       X_contam <- mvrnorm(n_contam, mu, k^2 * sigma)
@@ -313,18 +310,18 @@ gen_data_flexible_v1 <- function(recipe, seed, n_test = 100) {
       X_all[row_idx[(n_clean + 1):N_total], ] <- X_contam
     }
   }else {
-    # t分布 (自由度3) などのバリエーション
-    # 正規乱数を sqrt(chi-sq/df) で割る生成法
+    # multivariate t (3 degrees of freedom):
+    # normal draws divided by sqrt(chi-sq / df)
     Z <- mvrnorm(N_total, mu, sigma)
     W <- rchisq(N_total, df = 3)
     X_all <- Z / sqrt(W / 3)
   }
   
-  # 訓練データとテストデータの分割
+  # training / test split
   x      <- X_all[1:n, ]
   xtest  <- X_all[(n + 1):N_total, ]
   
-  # 5. 応答変数 y の生成 (SNRに基づくノイズ付加)
+  # 5. Response y with noise determined by the SNR (beta' Sigma beta / SNR)
   signal_var <- as.numeric(t(beta) %*% sigma %*% beta)
   noise_sd   <- sqrt(signal_var / snr)
   errors     <- rnorm(N_total, 0, noise_sd)
@@ -332,18 +329,17 @@ gen_data_flexible_v1 <- function(recipe, seed, n_test = 100) {
   y      <- x %*% beta + errors[1:n]
   ytest  <- xtest %*% beta + errors[(n + 1):N_total]
   
-  # 6. 特徴量（固有値）の抽出
-  # 真の共分散行列の固有値
+  # 6. Eigenvalue features
+  # eigenvalues of the true covariance matrix
   true_ev_all <- eigen(sigma, only.values = TRUE)$values
   true_ev     <- get_top_bottom_10(true_ev_all)
   
-  # サンプル共分散行列の固有値 (P > N の場合に注意)
-  # メモリ節約のため sample_sigma を直接作らず tcrossprod 等を使うのも手
+  # eigenvalues of the sample covariance matrix
   sample_sigma  <- (t(x) %*% x) / n
   sample_ev_all <- eigen(sample_sigma, only.values = TRUE)$values
   sample_ev     <- get_top_bottom_10(sample_ev_all)
   
-  # 全てをリストにまとめて返す
+  # return everything as a list
   return(list(
     x = x, y = y, xtest = xtest, ytest = ytest,
     beta = beta,

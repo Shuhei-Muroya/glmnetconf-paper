@@ -10,22 +10,22 @@
 library(dplyr)
 
 # ============================================================
-# 共通の定義
+# Common definitions
 # ============================================================
 n_grid_pts    <- 5
-thresh_range  <- c(1e-9, 1e-7)    # log scale。上端がdefault
-nlam_min      <- 100              # default相当
-nlam_max_mult <- 2                # 上端 = nlam_max_mult * p
+thresh_range  <- c(1e-9, 1e-7)    # log scale; the upper end is the default
+nlam_min      <- 100              # default length
+nlam_max_mult <- 2                # upper end = nlam_max_mult * p
 maxit_val     <- 1e7
 seed_upper    <- 1000000
 
 other_fixed <- data.frame(
   sigma_struct = "AR", sprate = NA, m = NA, block_p = NA,
-  beta_type = 5, beta_struct = 2, x_dis_type = 1,   # 正規分布
+  beta_type = 5, beta_struct = 2, x_dis_type = 1,   # multivariate normal
   stringsAsFactors = FALSE
 )
 
-# ---- 設定格子（pごとに作る）----
+# ---- configuration grid (depends on p) ----
 make_config_grid <- function(p, thresh_range, n_grid_pts, nlam_min, nlam_max_mult) {
   thresh_vec  <- 10^seq(log10(thresh_range[1]), log10(thresh_range[2]),
                         length.out = n_grid_pts)
@@ -37,8 +37,8 @@ make_config_grid <- function(p, thresh_range, n_grid_pts, nlam_min, nlam_max_mul
   grid
 }
 
-# ---- データ単位のレシピを作る関数（1行 = 1データ）----
-# require_size: 指定すると、n または p がその値の組み合わせだけ残す
+# ---- recipe with one dataset per row ----
+# require_size: if given, keep only (n, p) pairs where n or p equals it
 make_recipe <- function(N_vector, p_vector, case_settings, other_fixed,
                         n_rep, base_seed, seed_upper,
                         pattern_id_offset = 0, require_size = NULL) {

@@ -11,17 +11,17 @@ process_simulation_results <- function(directory_path) {
 
   files <- list.files(directory_path, pattern = "res_chunk_.*\\.rds", full.names = TRUE)
   if (length(files) == 0) {
-    stop("指定されたディレクトリに該当するファイルが見つかりません。")
+    stop("No res_chunk_*.rds files found in the directory.")
   }
 
-  # --- 補助関数 ---
+  # --- helpers ---
 
-  # エラー記録かどうかを判定
+  # is this an error record?
   is_error_item <- function(item) {
     isTRUE(item$error)
   }
 
-  # 単一の要素（1シミュレーション分）を整形する
+  # flatten one element (one simulated dataset)
   transform_item <- function(item) {
     lars_part <- as.data.frame(t(unlist(item$lars_list)))
     glm_part  <- item$glmnet_list$glmnet_df
@@ -35,16 +35,16 @@ process_simulation_results <- function(directory_path) {
     )
   }
 
-  # --- メイン処理 ---
+  # --- main ---
   cat("Processing", length(files), "files...\n")
 
-  error_log <- list()  # エラー記録を収集
+  error_log <- list()  # collect error records
 
   all_data_list <- map(files, function(f) {
     chunk_data <- readRDS(f)
     map(chunk_data, function(item) {
       if (is_error_item(item)) {
-        # エラー記録はNULLを返してスキップ
+        # skip error records
         error_log[[length(error_log) + 1]] <<- item
         return(NULL)
       }
@@ -62,9 +62,9 @@ process_simulation_results <- function(directory_path) {
     })
   }) %>%
     flatten() %>%
-    compact()  # NULLを除去
+    compact()  # drop NULLs
 
-  # エラー件数の報告
+  # report the number of errors
   n_errors <- length(error_log)
   if (n_errors > 0) {
     cat(sprintf("Skipped %d error item(s).\n", n_errors))
@@ -72,12 +72,12 @@ process_simulation_results <- function(directory_path) {
 
   cat("Valid items:", length(all_data_list), "\n")
 
-  # LARS単体データの行結合
+  # row-bind the LARS / default summaries
   cat("Combining LARS summary...\n")
   lars_summary_matrix <- map_dfr(all_data_list, ~ .x$lars_only)
   rownames(lars_summary_matrix) <- NULL
 
-  # LARS + glmnet 結合データの行結合
+  # row-bind LARS + glmnet results
   cat("Combining All results (LARS + glmnet)...\n")
   all_combined_matrix <- map_dfr(all_data_list, ~ .x$combined)
   rownames(all_combined_matrix) <- NULL
@@ -85,7 +85,7 @@ process_simulation_results <- function(directory_path) {
   list(
     lars_summary = lars_summary_matrix,
     all_combined = all_combined_matrix,
-    error_log    = error_log          # デバッグ用にエラー記録も返す
+    error_log    = error_log          # error records, for debugging
   )
 }
 
@@ -99,7 +99,7 @@ load_sensitivity_results <- function(result_dir, chunk_regex) {
     meta <- x$lars_list
     meta <- meta[vapply(meta, function(v) is.atomic(v) && length(v) == 1, logical(1))]
     df   <- x$glmnet_list$glmnet_df
-    meta <- meta[setdiff(names(meta), names(df))]  # T_hope, K の重複を除く
+    meta <- meta[setdiff(names(meta), names(df))]  # drop duplicated T_hope and K
     cbind(as.data.frame(meta, stringsAsFactors = FALSE), df)
   }
 

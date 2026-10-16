@@ -35,7 +35,7 @@ compses_glmnetconf <- function(original,Psi,N=256,seed=1,save=FALSE,folder_name 
   theta_reconst2<-Psi%*%coef_p
   
   
-  #glmnet, デフォルト
+  # glmnet (default)
   set.seed(seed)
   a<-Sys.time()
   cv_def<-cv.glmnet(X,y,family = "gaussian",alpha = 1,intercept=FALSE)
@@ -43,7 +43,7 @@ compses_glmnetconf <- function(original,Psi,N=256,seed=1,save=FALSE,folder_name 
   b<-Sys.time()
   time_def<-b-a
   coef_def<-stats::coef(model_def,s=cv_def$lambda.min)
-  coef_def<-as.numeric(coef_def)[-1]#interseptは0になるFALSEで、だからここで抜く。FALSEにしても消えるわけではない
+  coef_def<-as.numeric(coef_def)[-1]# drop the intercept (it is 0 with intercept = FALSE but still returned)
   theta_reconst_def<-Psi%*%coef_def
   
   ##auto
@@ -51,20 +51,19 @@ compses_glmnetconf <- function(original,Psi,N=256,seed=1,save=FALSE,folder_name 
   set<-tune_configuration(X,T_hope=20,size = 1000)
   pl<-set$best_configuration$nlambda
   t<-set$best_configuration$thresh
-  minn<-min(model_def$lambda)####修正
+  minn<-min(model_def$lambda)
   len_model1_lambda<-length(model_def$lambda)
   model1_lambda<-model_def$lambda
-  #print(model1_lambda)
   if(pl==0){
     lam<-model1_lambda
   }else if(pl<len_model1_lambda){
-    add<-seq(minn,0,by=-(minn/(100-len_model1_lambda)))[-1]#100まで増やす必要ない。
-    #単に長さplにする
-    add<-seq(minn,0,length.out=pl)#[-1]
-    lam<-add##ここの修正
+    add<-seq(minn,0,by=-(minn/(100-len_model1_lambda)))[-1]# (overwritten on the next line)
+    # lambda sequence of length pl
+    add<-seq(minn,0,length.out=pl)
+    lam<-add
   }else{
-    add<-seq(minn,0,by=-(minn/(pl-len_model1_lambda)))[-1]#続きを増やしている。
-    lam<-c(model1_lambda,add)#増やしたlambdaの候補
+    add<-seq(minn,0,by=-(minn/(pl-len_model1_lambda)))[-1]# extend the default sequence towards 0
+    lam<-c(model1_lambda,add)# extended lambda sequence
   }
   
   pl_l<-length(lam)
@@ -96,7 +95,7 @@ compses_glmnetconf <- function(original,Psi,N=256,seed=1,save=FALSE,folder_name 
   return(result)
 }
 
-# 実行 ----------------------------------------------------------------------
+# Run -------------------------------------------------------------------------
 data_dir    <- file.path("05_compressed_sensing", "data")
 results_dir <- file.path("05_compressed_sensing", "results")
 
@@ -106,13 +105,13 @@ Psi<-t(Psi)
 
 file_path <- file.path(data_dir, "mnist_label_9_image_4.csv")
 data <- read.csv(file_path, header = FALSE)
-original<-as.numeric(unlist(t(data)))#tはplotとかと合わせるために必要
+original<-as.numeric(unlist(t(data)))# transpose to match the image orientation
 
 a<-compses_glmnetconf(original,Psi,N=700,save=T,folder_name = results_dir)
 print(a[c("time_lars", "time_def", "time_set")])
 
 
-# RMSEまで計算 ----------------------------------------------------------------
+# RMSE ------------------------------------------------------------------------
 
 library(dplyr)
 original<-read.csv(file.path(data_dir, "mnist_label_9_image_4.csv"),header = F)
@@ -123,20 +122,20 @@ set<-read.csv(file.path(results_dir, "reconst_set_N=700.csv"))
 
 
 
-# スケーリング ------------------------------------------------------------------
+# Scaling ---------------------------------------------------------------------
 
 
-# 1. まずスケーリング関数を定義
+# 1. Rescaling function
 rescale_255 <- function(x) {
   x_min <- min(x, na.rm = TRUE)
   x_max <- max(x, na.rm = TRUE)
   if (x_max == x_min) return(numeric(length(x)))
   
-  # 0-255に変換
+  # map to [0, 255]
   return((x - x_min) / (x_max - x_min) * 255)
 }
 
-# 2. original と各データをベクトル化
+# 2. Vectorise the original and the reconstructions
 original_vec <- as.vector(t(original))
 results_raw <- list(
   def  = unlist(def),
@@ -144,40 +143,39 @@ results_raw <- list(
   set  = unlist(set)
 )
 
-# 3. すべてのデータを個別にスケーリング
-# originalも比較対象としてスケーリングしておく必要があります
+# 3. Rescale each image separately
+# (the original is rescaled as well)
 original_scaled <- rescale_255(original_vec)
 results_scaled <- lapply(results_raw, rescale_255)
 
-# 4. RMSEを計算する関数の定義
+# 4. RMSE
 calc_rmse <- function(target, ref) {
   sqrt(mean((target - ref)^2, na.rm = TRUE))
 }
 
-# 5. スケーリング済みデータ同士でRMSEを一括計算
+# 5. RMSE between the rescaled images
 rmses_scaled <- sapply(results_scaled, calc_rmse, ref = original_scaled)
 
-# 結果の表示
+# print the results
 print("--- Scaled RMSE (0-255) ---")
 print(rmses_scaled)
 
 
-# 結果の保存 -------------------------------------------------------------------
+# Save --------------------------------------------------------------------------
 
-# 1. 保存先のパスを指定
+# 1. Output path
 save_path <- file.path(results_dir, "rmse_scaled.csv")
 
-# 2. 結果をデータフレームに整形（手法名とRMSE値）
+# 2. Data frame of method and RMSE
 rmse_df <- data.frame(
   Method = names(rmses_scaled),
   RMSE_Scaled = as.numeric(rmses_scaled)
 )
 
-# 3. 保存
+# 3. Save
 write.csv(rmse_df, save_path, row.names = FALSE)
 
-# 確認表示
-cat("--- 以下のパスにRMSEの結果を保存しました ---\n")
+cat("--- RMSE saved to ---\n")
 print(save_path)
 print(rmse_df)
 

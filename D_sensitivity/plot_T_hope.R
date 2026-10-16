@@ -8,7 +8,7 @@ library(dplyr)
 library(ggplot2)
 source("R/load_results.R")
 
-# ===== 設定 =====
+# ===== settings =====
 result_dir  <- file.path("D_sensitivity", "results", "T_hope")
 save_dir    <- file.path("D_sensitivity", "figures")
 dir.create(save_dir, recursive = TRUE, showWarnings = FALSE)
@@ -18,7 +18,7 @@ panel_w_cm  <- 6
 panel_h_cm  <- 5
 setting_palette <- c("red3", "skyblue3")
 missing_fill    <- "grey85"
-ref_shape       <- 4     # T_hope の基準点 (×)
+ref_shape       <- 4     # marker of the specified T_hope (x)
 ref_size        <- 2
 ref_stroke      <- 0.8
 
@@ -29,7 +29,7 @@ if (!is.null(results_Thope$errors)) print(table(results_Thope$errors$error_msg))
 
 all_Thope <- results_Thope$all_combined
 
-# ===== 2. 設定ラベル (データから作成, SNR の大きい順) =====
+# ===== 2. Setting labels (from the data, larger SNR first) =====
 setting_table <- all_Thope %>%
   distinct(rho, snr) %>%
   arrange(desc(snr), desc(rho)) %>%
@@ -47,7 +47,7 @@ all_Thope <- all_Thope %>%
     T_hope_f = factor(T_hope, levels = T_hope_levels)
   )
 
-# 確認: (n, p, setting, T_hope) ごとの件数 (想定は各 100)
+# check: number of rows per (n, p, setting, T_hope) (100 each)
 print(all_Thope %>% count(n, p, setting, T_hope) %>% pull(n) %>% table())
 
 setting_colors <- setNames(setting_palette[seq_len(nrow(setting_table))],
@@ -56,15 +56,15 @@ setting_labels <- setNames(parse(text = setting_table$setting_label),
                            setting_table$setting)
 T_hope_labels  <- format(T_hope_levels, big.mark = ",", scientific = FALSE, trim = TRUE)
 
-# ===== 3. 結果が存在しない (n, p) パネルと基準点 =====
+# ===== 3. (n, p) panels without results, and reference points =====
 missing_panels <- expand.grid(n = sort(unique(all_Thope$n)),
                               p = sort(unique(all_Thope$p))) %>%
   anti_join(distinct(all_Thope, n, p), by = c("n", "p"))
 print(missing_panels)
 
-ref_df <- all_Thope %>% distinct(n, p, T_hope, T_hope_f)  # 結果のあるパネルのみ
+ref_df <- all_Thope %>% distinct(n, p, T_hope, T_hope_f)  # panels with results only
 
-# ===== 4. プロット関数 (横軸・縦軸を切り替え可能) =====
+# ===== 4. Plot function (x and y variables selectable) =====
 make_sensi_boxplot <- function(df, x_var, x_labels, x_title,
                                y_var, y_label, log_y = TRUE, ref = NULL) {
   g <- ggplot(df, aes(x = .data[[x_var]], y = .data[[y_var]], fill = setting)) +
@@ -94,7 +94,7 @@ n_rows <- length(unique(all_Thope$p))
 n_cols <- length(unique(all_Thope$n))
 x_title_Thope <- expression(T[hope] ~ "(s)")
 
-# ===== 5. glmnet の計算時間 (× = T_hope) =====
+# ===== 5. Computation time of glmnet (x = T_hope) =====
 p_time <- make_sensi_boxplot(all_Thope, "T_hope_f", T_hope_labels, x_title_Thope,
                              "time_glmnet", "Computation time (s, log scale)",
                              log_y = TRUE, ref = ref_df)
@@ -111,7 +111,7 @@ ggsave(file.path(save_dir, "fig13_spe_by_Thope.pdf"), p_spe,
        width = panel_w_cm * n_cols, height = panel_h_cm * n_rows,
        units = "cm", limitsize = FALSE)
 
-# ===== 7. 集計表 =====
+# ===== 7. Summary table =====
 summary_Thope <- all_Thope %>%
   group_by(setting, n, p, T_hope) %>%
   summarise(

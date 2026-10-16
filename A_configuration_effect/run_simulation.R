@@ -14,13 +14,13 @@ library(lars)
 
 source("A_configuration_effect/recipe.R")
 
-# ---- 設定 ----
+# ---- settings ----
 save_dir    <- file.path("A_configuration_effect", "results")
 if (!dir.exists(save_dir)) dir.create(save_dir, recursive = TRUE)
 start_chunk <- 1
 core_n      <- 20
-chunk_size  <- 20      # 1データ=25設定で重いので小さめ
-n_cand      <- 20      # SPE用のλ点数（元と同じ）
+chunk_size  <- 20      # small chunks: 25 configurations per dataset
+n_cand      <- 20      # number of reference lambdas for SPE
 cand_min    <- 0.001
 
 cl <- makeCluster(core_n)
@@ -61,7 +61,7 @@ for (j in start_chunk:length(chunk_indices)) {
       x <- data_list_ln$x; y <- data_list_ln$y
       xtest <- data_list_ln$xtest; ytest <- data_list_ln$ytest
       
-      # ---- default glmnet：λ列の土台とcandidateの上端（lmax）に使う ----
+      # ---- default glmnet: base lambda sequence and the upper end (lmax) of the reference lambdas ----
       set.seed(seed)
       model1 <- glmnet(x = x, y = y, family = "gaussian", alpha = 1)
       model1_lambda     <- model1$lambda
@@ -69,7 +69,7 @@ for (j in start_chunk:length(chunk_indices)) {
       minn <- min(model1_lambda)
       lmax <- max(model1_lambda)
       
-      # ---- LARS（元スクリプトと同じ。1データにつき1回）----
+      # ---- LARS (once per dataset) ----
       has_warning_lars <- 0
       set.seed(seed)
       lars_mode <- if (n != p) "fraction" else "step"
@@ -98,7 +98,7 @@ for (j in start_chunk:length(chunk_indices)) {
       coef_lars <- t(predict.lars(lmodel, type = "coefficients", mode = "lambda",
                                   s = candidate * sqrt(n))$coefficients)
       
-      # ---- glmnetを1回回して評価する関数（default呼び出しも格子点も共通）----
+      # ---- fit and evaluate glmnet once (used for the default call and for every grid point) ----
       run_glmnet <- function(extra_args) {
         has_warning_set <- 0
         set.seed(seed)
@@ -131,14 +131,14 @@ for (j in start_chunk:length(chunk_indices)) {
         )
       }
       
-      # ---- default呼び出し（引数なし）：格子の隅（1e-7, 100）との一致確認用 ----
+      # ---- default call (no arguments): check against the grid corner (1e-7, 100) ----
       res_default <- run_glmnet(list())
       res_default$config_id <- NA_integer_
       res_default$thresh    <- NA_real_
       res_default$nlambda   <- NA_real_
       res_default$is_default_call <- 1L
       
-      # ---- 指定格子を全部回す ----
+      # ---- run the whole grid ----
       config_grid <- make_config_grid(p, thresh_range, n_grid_pts, nlam_min, nlam_max_mult)
       
       res_list <- vector("list", nrow(config_grid))
@@ -146,7 +146,7 @@ for (j in start_chunk:length(chunk_indices)) {
         n_lambda <- config_grid$nlambda[i]
         thresh   <- config_grid$thresh[i]
         
-        # λ列：defaultの列に、defaultの最小値から0まで等間隔で追加（論文の構成）
+        # lambda sequence: the default sequence extended by equally spaced values from its minimum to 0 (Sec. 3.2)
         if (n_lambda <= len_model1_lambda) {
           lam <- model1_lambda
         } else {

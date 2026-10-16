@@ -12,7 +12,7 @@ library(ggplot2)
 library(patchwork)
 library(purrr)
 
-# 0. 設定 -------------------------------------------------------------------
+# 0. Settings -----------------------------------------------------------------
 series_labels    <- c(lars = "LARS", forecast = "lars-MLP")
 series_levels    <- names(series_labels)
 series_colors    <- setNames(c("skyblue3", "forestgreen"), series_labels)
@@ -23,7 +23,7 @@ POINT_SIZE   <- 1.5
 BASE_SIZE    <- 13
 X_TEXT_ANGLE <- 45
 DROP_N_EQ_P  <- TRUE
-LOG_Y        <- FALSE   # TRUE で縦軸を対数に
+LOG_Y        <- FALSE   # TRUE: log-scale y axis
 
 common_theme <- theme(
   legend.position = "top",
@@ -42,22 +42,22 @@ common_theme <- theme(
 forecast_file <- file.path("E_lars_time_prediction", "results", "forecast_lars_all.csv")
 save_dir      <- file.path("E_lars_time_prediction", "figures")
 
-# 結合キー: 両方にある条件の列 + seed（all_combined 側の名前 = forecast 側の名前）
+# join keys: setting columns present in both + seed (gen_seed in all_combined = seed in the forecast)
 seed_map   <- c(gen_seed = "seed")
-group_cols <- c("x_dis_type", "snr", "rho", "n", "p")   # 平均を取る単位（プロットと同じ）
+group_cols <- c("x_dis_type", "snr", "rho", "n", "p")   # unit of aggregation (same as the plot)
 actual_col   <- "time_lars"
 forecast_col <- "T_lars_forecast"
-DROP_LARS_WARNING <- FALSE   # TRUE: has_warning_lars が TRUE の行を除く
+DROP_LARS_WARNING <- FALSE   # TRUE: drop rows with has_warning_lars
 
-# 1. 1行ずつ結合 → (group_cols) ごとに平均 -----------------------------------
+# 1. Join row by row, then take medians within group_cols -------------------------
 make_time_summary <- function(all_combined, forecast_df) {
-  # 共通の条件列（seed 以外）をデータから取得
+  # setting columns shared by both data frames (except the seed)
   pattern_cols <- setdiff(intersect(names(all_combined), names(forecast_df)),
                           c(names(seed_map), seed_map))
   cat("join keys:", c(pattern_cols, names(seed_map)), "\n")
 
-  # 型の違い（数値 / 文字）で結合が外れないよう、キーは文字列にそろえる
-  # （NA 同士は dplyr の既定でマッチする）
+  # convert keys to character so that numeric / character types do not break the join
+  # (NA matches NA by default in dplyr)
   key_to_chr <- function(d, cols) d %>% mutate(across(all_of(cols), as.character))
 
   actual <- all_combined %>%
@@ -70,12 +70,12 @@ make_time_summary <- function(all_combined, forecast_df) {
     select(all_of(c(pattern_cols, names(seed_map), forecast_col))) %>%
     key_to_chr(c(pattern_cols, names(seed_map)))
 
-  # 結合できなかった行の確認
+  # rows that could not be joined
   cat("actual only  :", nrow(anti_join(actual, forecast, by = c(pattern_cols, names(seed_map)))), "\n")
   cat("forecast only:", nrow(anti_join(forecast, actual, by = c(pattern_cols, names(seed_map)))), "\n")
 
   joined <- inner_join(actual, forecast, by = c(pattern_cols, names(seed_map)),
-                       relationship = "one-to-one")              # 重複があればエラーで止める
+                       relationship = "one-to-one")              # stop if there are duplicates
   cat("joined rows  :", nrow(joined), "\n")
 
   joined %>%
@@ -88,7 +88,7 @@ make_time_summary <- function(all_combined, forecast_df) {
 }
 
 
-# 2. 1組み合わせ (SNR, rho) の図 --------------------------------------------
+# 2. Plot for one (SNR, rho) combination --------------------------------------------
 make_time_plot <- function(df_subset, title_expr = NULL) {
   p_values <- sort(unique(df_subset$p))
   p_label_levels <- paste0("p * ' ' == ' ' * ", p_values)
@@ -114,7 +114,7 @@ make_time_plot <- function(df_subset, title_expr = NULL) {
   g
 }
 
-# 3. x_dis_type ごとに SNR × rho を縦に積んで保存 -----------------------------
+# 3. Stack the (SNR, rho) rows for each x_dis_type and save -----------------------------
 generate_forecast_plots <- function(time_summary, save_dir, dist_values = 5,
                                     drop_n_eq_p = DROP_N_EQ_P,
                                     width_cm = 28, row_height_cm = 6, legend_height_cm = 1.2) {
@@ -125,7 +125,7 @@ generate_forecast_plots <- function(time_summary, save_dir, dist_values = 5,
   for (dist_val in dist_values) {
     df_dist <- time_summary %>% filter(x_dis_type %in% dist_val)
     combo_list <- df_dist %>% distinct(snr, rho) %>% arrange(snr, rho)
-    if (nrow(combo_list) == 0) { warning(sprintf("x_dis_type = %s のデータがありません", dist_val)); next }
+    if (nrow(combo_list) == 0) { warning(sprintf("no data for x_dis_type = %s", dist_val)); next }
 
     plots <- map2(combo_list$snr, combo_list$rho, function(snr_val, rho_val) {
       make_time_plot(df_dist %>% filter(snr %in% snr_val, rho %in% rho_val),
@@ -145,7 +145,7 @@ generate_forecast_plots <- function(time_summary, save_dir, dist_values = 5,
   invisible(out)
 }
 
-# --- 実行 ---
+# --- run ---
 results      <- process_simulation_results(file.path("04_simulation", "results"))
 all_combined <- results$all_combined %>%
   mutate(across(all_of(c("n", "p", "rho", "snr", "time_lars")), as.numeric))

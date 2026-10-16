@@ -22,19 +22,18 @@ dir.create(save_dir, recursive = TRUE, showWarnings = FALSE)
 
 # tune_configuration() defaults: T_hope = 20 s, K = 1000 (not passed explicitly)
 T_hope<-20
-K<-1000 #サンプリング数
+K<-1000 # number of sampled configurations
 
 core_n <- 20
 cl <- makeCluster(core_n)
 registerDoParallel(cl)
 
-# チャンク設定
+# chunks
 chunk_size <- 100
 master_recipe <- simulation_recipe_rep
 n_total <- nrow(master_recipe)
 chunk_indices <- split(1:n_total, ceiling(seq_along(1:n_total) / chunk_size))
 
-# 再開するチャンク番号（完了済みチャンクの次から）
 start_chunk <- 1
 
 clusterEvalQ(cl, {
@@ -51,7 +50,7 @@ clusterExport(cl, c("c_rmse", "rmse", "gen_data_flexible", "generate_sigma_wrapp
 
 cat("Resuming simulation from chunk", start_chunk, "of", length(chunk_indices), "...\n")
 
-# --- メインループ ---
+# --- main loop ---
 for(j in start_chunk:length(chunk_indices)) {
   print(j)
   idx_j <- chunk_indices[[j]]
@@ -60,14 +59,14 @@ for(j in start_chunk:length(chunk_indices)) {
   
   result_df_j <- foreach(ln = 1:LN_j, .packages = c("MASS", "glmnet", "lars", "Matrix")) %dopar% {
     
-    # エラーが出てもスキップして続行
+    # record errors and continue
     tryCatch({
       
       pattern <- Plars_j[ln, ]
       seed <- as.numeric(pattern$seed)
       
       data_list_ln <- gen_data_flexible(pattern, seed = seed)
-      # gen_data_flexible は真の係数 beta を data_list_ln$beta として返す（変更不要）
+      # gen_data_flexible() also returns the true coefficients as data_list_ln$beta
       
       n <- as.numeric(pattern$n)
       p <- as.numeric(pattern$p)
@@ -75,7 +74,7 @@ for(j in start_chunk:length(chunk_indices)) {
       has_warning_lars <- 0
       warning_msg_def <- ""
       
-      # lassoの計算
+      # glmnet (default)
       set.seed(seed)
       st <- Sys.time()
       lassocv <- cv.glmnet(data_list_ln$x, data_list_ln$y, family="gaussian", alpha=1)
@@ -93,13 +92,13 @@ for(j in start_chunk:length(chunk_indices)) {
       rmse_def <- c_rmse(pred1, data_list_ln$ytest)
       time <- as.numeric(difftime(gt, st, units="secs"))
       
-      # --- 真の係数 beta との誤差（default glmnet, CVで選ばれたlambdaでの推定係数） ---
-      # 注意: 総称関数 coef() は f_random_covm.R 内の自作 coef(p, sparse_ratio) に
-      #       上書きされているため、必ず coef.glmnet() を明示的に呼ぶこと
+      # --- error w.r.t. the true beta (glmnet default, coefficients at the CV-selected lambda) ---
+      # note: coef() is masked by coef(p, sparse_ratio) defined in R/data_generation.R,
+      #       so coef.glmnet() is called explicitly
       coef_est_def <- as.vector(as.matrix(coef.glmnet(model1, s = lambda)))[-1]
       coef_rmse_def <- rmse(coef_est_def - data_list_ln$beta)
       
-      # LARSの計算
+      # LARS
       set.seed(seed)
       lars_mode <- if (n != p) "fraction" else "step"
       
@@ -134,11 +133,11 @@ for(j in start_chunk:length(chunk_indices)) {
         timel <- as.numeric(difftime(gt, st, units="secs"))
       }
       
-      # --- 真の係数 beta との誤差（LARS, CVで選ばれたbeststepでの推定係数） ---
+      # --- error w.r.t. the true beta (LARS, coefficients at the CV-selected step) ---
       coef_est_lars <- as.vector(predict.lars(lmodel, type="coefficients", mode=lars_mode, s=beststep)$coefficients)
       coef_rmse_lars <- rmse(coef_est_lars - data_list_ln$beta)
       
-      # 係数の誤差計算用 candidate 作成（既存: LARS解パスとの比較用）
+      # reference lambdas (candidate) for SPE (comparison with the LARS path)
       lmax <- max(model1$lambda)
       candidate <- exp(seq(from=log(0.001), to=log(lmax), length.out=20))
       candidate[1] <- 0
@@ -171,14 +170,13 @@ for(j in start_chunk:length(chunk_indices)) {
         RMSE_pred_default=rmse_def, time_default=time,
         RMSE_pred_lars=rmsel, time_lars=timel,
         SPE_default=Krmsec1, sd_SPE_default=sdd,
-        RMSE_coef_default=coef_rmse_def,   # 真のbetaとの誤差 (default glmnet)
-        RMSE_coef_lars=coef_rmse_lars,     # 真のbetaとの誤差 (LARS)
+        RMSE_coef_default=coef_rmse_def,   # error w.r.t. the true beta (glmnet default)
+        RMSE_coef_lars=coef_rmse_lars,     # error w.r.t. the true beta (LARS)
         has_warning_def=has_warning_def,
         has_warning_lars=has_warning_lars
       )
       
-      #ここを固定値にする。
-      # image,glmnet confを使ってここを調整
+      # configuration of glmnet (proposed) tuned by glmnetconf
       config <- tune_configuration(data_list_ln$x,seed=1,message = TRUE,line=FALSE)
       thresh_vec <- config$best_configuration$thresh
       plam <- floor(config$best_configuration$nlambda)
@@ -234,9 +232,9 @@ for(j in start_chunk:length(chunk_indices)) {
         coef_accuracy_glmnet <- mean(rmsec1)
         coef_sd_glmnet <- sd(rmsec1)
         
-        # --- 真の係数 beta との誤差（tuned glmnet, lambda_bestでの推定係数） ---
-        # 注意: 総称関数 coef() は f_random_covm.R 内の自作 coef(p, sparse_ratio) に
-        #       上書きされているため、必ず coef.glmnet() を明示的に呼ぶこと
+        # --- error w.r.t. the true beta (glmnet proposed, coefficients at lambda_best) ---
+        # note: coef() is masked by coef(p, sparse_ratio) defined in R/data_generation.R,
+        #       so coef.glmnet() is called explicitly
         coef_est_glmnet <- as.vector(as.matrix(coef.glmnet(glmnet_model, s = lambda_best)))[-1]
         coef_rmse_glmnet <- rmse(coef_est_glmnet - data_list_ln$beta)
         
@@ -257,7 +255,7 @@ for(j in start_chunk:length(chunk_indices)) {
       list(lars_list=lars_res, glmnet_list=list(glmnet_df=glmnet_df), warning_list=warning_log)
       
     }, error = function(e) {
-      # エラーが出たタスクはエラー情報を記録してスキップ
+      # record the failed task and skip it
       list(
         error = TRUE,
         error_msg = conditionMessage(e),
@@ -268,10 +266,10 @@ for(j in start_chunk:length(chunk_indices)) {
     })
   }
   
-  # チャンクごとに保存
+  # save each chunk
   saveRDS(result_df_j, file=file.path(save_dir, paste0("res_chunk_", j, ".rds")))
   
-  # エラーが発生したタスクを報告
+  # report failed tasks
   error_tasks <- which(sapply(result_df_j, function(x) isTRUE(x$error)))
   if(length(error_tasks) > 0) {
     cat(sprintf("[%s] Chunk %d: %d task(s) failed (ln = %s)\n",

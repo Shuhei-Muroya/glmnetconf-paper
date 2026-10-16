@@ -6,14 +6,14 @@
 # =============================================================================
 library(dplyr)
 
-# K=1000 に固定(Thopeの効き方を見るのが目的)
-# rho, snrはmain/contrastの2点(極端な両端)を維持
+# K fixed at 1000 (the aim is the effect of T_hope)
+# (rho, SNR): the two extreme cases main / contrast
 
 N_vector <- c(100, 500, 1000, 1500)
 p_vector <- c(100, 500, 1000, 1500)
 
 Np_grid <- expand.grid(n = N_vector, p = p_vector, stringsAsFactors = FALSE)
-Np_grid <- Np_grid[Np_grid$n != Np_grid$p, ]  # N=pを除外
+Np_grid <- Np_grid[Np_grid$n != Np_grid$p, ]  # exclude N = p
 rownames(Np_grid) <- NULL
 
 cat("Number of (n, p) combinations (N != p):", nrow(Np_grid), "\n")
@@ -40,7 +40,7 @@ other_fixed <- data.frame(
   stringsAsFactors = FALSE
 )
 
-# T_hope × case のグリッド
+# grid of T_hope x case
 thope_case_grid <- expand.grid(
   T_hope = T_hope_vector,
   case   = case_settings$case,
@@ -49,7 +49,7 @@ thope_case_grid <- expand.grid(
 ) %>%
   dplyr::left_join(case_settings, by = "case")
 
-# Np_grid × (T_hope × case) の完全クロス結合
+# cross join Np_grid x (T_hope x case)
 sensitivity_recipe <- merge(Np_grid, thope_case_grid, by = NULL)
 sensitivity_recipe <- cbind(sensitivity_recipe, other_fixed[rep(1, nrow(sensitivity_recipe)), , drop = FALSE])
 rownames(sensitivity_recipe) <- NULL

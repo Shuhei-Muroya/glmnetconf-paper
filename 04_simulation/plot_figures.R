@@ -14,7 +14,7 @@ library(ggplot2)
 library(patchwork)
 library(purrr)
 
-# 0. 設定(一元管理) -------------------------------------------------------
+# 0. Settings -----------------------------------------------------------------
 method_labels <- c(
   default = "glmnet (default)",
   glmnet  = "glmnet (proposed)",
@@ -24,9 +24,9 @@ method_levels <- names(method_labels)
 method_colors <- c("gray40", "red3", "skyblue3")
 names(method_colors) <- method_labels[method_levels]
 
-# 指標ごとの設定: 列名の接頭辞・y軸ラベル・保存ファイル名
-# 手法は「接頭辞 + method_levels」の列のうちデータに存在するものを自動で使う
-# (SPE は LARS の列がないので default / proposed の2本になる)
+# per metric: column prefix, y-axis label and output file name;
+# methods are the columns "prefix + method_levels" present in the data
+# (SPE has no LARS column, so only default and proposed are drawn)
 metric_specs <- list(
   RMSE = list(prefix = "RMSE_pred_", ylab = "RMSE",                 file = "RMSE_comparison"),
   Time = list(prefix = "time_",      ylab = "Computation Time (s)", file = "Time_comparison"),
@@ -37,10 +37,10 @@ metric_specs <- list(
 LINE_SIZE  <- 1
 POINT_SIZE <- 1.5
 BASE_SIZE  <- 13
-X_TEXT_ANGLE <- 45   # x 軸(N)の目盛りラベルの角度。0 にすると水平
+X_TEXT_ANGLE <- 45   # angle of the x-axis (N) tick labels; 0 = horizontal
 
-# プロットから除く設定
-DROP_N_EQ_P <- TRUE  # TRUE: N = p の点をプロットしない / FALSE: すべてプロット
+# points excluded from the plots
+DROP_N_EQ_P <- TRUE  # TRUE: drop N = p / FALSE: plot all
 
 common_theme <- theme(
   legend.position = "top",
@@ -56,7 +56,7 @@ common_theme <- theme(
   plot.title = element_text(size = 13, face = "bold", hjust = 0.5)
 )
 
-# 1. 1指標 × 1組み合わせ(SNR, rho)の図を作る関数 ---------------------------
+# 1. Plot of one metric for one (SNR, rho) combination ---------------------------
 make_metric_plot <- function(df_subset, spec, title_expr = NULL) {
   value_cols <- intersect(paste0(spec$prefix, method_levels), names(df_subset))
 
@@ -84,7 +84,7 @@ make_metric_plot <- function(df_subset, spec, title_expr = NULL) {
     common_theme
 }
 
-# 2. 指定した x_dis_type について、SNR × rho を縦に積んだ統合図(_ALL)だけを保存 ----
+# 2. For each x_dis_type, stack the (SNR, rho) rows into one figure (_ALL) and save it ----
 generate_all_plots <- function(all_combined, save_dir, dist_values = 5,
                                drop_n_eq_p = DROP_N_EQ_P,
                                width_cm = 28, row_height_cm = 6, legend_height_cm = 1.2) {
@@ -101,20 +101,20 @@ generate_all_plots <- function(all_combined, save_dir, dist_values = 5,
   for (dist_val in dist_values) {
     df_dist <- all_combined %>% dplyr::filter(x_dis_type %in% dist_val)
 
-    # データに実際に存在する (SNR, rho) の組み合わせを取得
+    # (SNR, rho) combinations present in the data
     combo_list <- df_dist %>%
       dplyr::distinct(snr, rho) %>%
       dplyr::arrange(snr, rho)
     print(combo_list)
 
     if (nrow(combo_list) == 0) {
-      warning(sprintf("x_dis_type = %s のデータがありません", dist_val))
+      warning(sprintf("no data for x_dis_type = %s", dist_val))
       next
     }
 
-    # 組み合わせごとのサブセットとタイトル(rho はギリシャ文字で表示)
+    # subsets and titles for each combination (rho as a Greek letter)
     subsets <- purrr::map2(combo_list$snr, combo_list$rho, function(snr_val, rho_val) {
-      df_dist %>% dplyr::filter(snr %in% snr_val, rho %in% rho_val)   # %in% は NA にも対応
+      df_dist %>% dplyr::filter(snr %in% snr_val, rho %in% rho_val)   # %in% also handles NA
     })
     titles <- purrr::map2(combo_list$snr, combo_list$rho, function(snr_val, rho_val) {
       bquote("SNR" == .(snr_val) * "," ~~ rho == .(rho_val))
@@ -125,11 +125,11 @@ generate_all_plots <- function(all_combined, save_dir, dist_values = 5,
 
       plots <- purrr::map2(subsets, titles, function(d, ttl) make_metric_plot(d, spec, ttl))
 
-      # 凡例専用の段 (guide_area) を一番上に置き、その下に各 (SNR, ρ) の図を積む
-      #   → 「凡例 → SNR タイトル → パネル」の順になる
-      # guides = "collect"      : 全段の同じ凡例を1つにまとめて guide_area に入れる
-      # axis_titles = "collect" : 同じ y 軸ラベルは左に1つ、x 軸ラベル(N)は一番下に1つだけ
-      #                           (patchwork >= 1.2.0 が必要)
+      # legend row (guide_area) on top, then one row per (SNR, rho):
+      #   legend -> SNR title -> panels
+      # guides = "collect"      : one shared legend in guide_area
+      # axis_titles = "collect" : one y-axis title on the left and one x-axis title (N) at the bottom
+      #                           (requires patchwork >= 1.2.0)
       n_rows  <- length(plots)
       heights <- grid::unit(c(legend_height_cm, rep(1, n_rows)),
                             c("cm", rep("null", n_rows)))

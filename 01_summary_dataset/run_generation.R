@@ -38,18 +38,17 @@ gen_fun  <- if (target == "xdist1_normal") gen_data_flexible_v1 else gen_data_fl
 save_dir <- file.path("01_summary_dataset", "results", target)
 dir.create(save_dir, recursive = TRUE, showWarnings = FALSE)
 
-# --- 設定 ---
+# --- settings ---
 core_n <- 20
 cl <- makeCluster(core_n)
 registerDoParallel(cl)
 
-# チャンク設定
+# chunks
 chunk_size <- 100
 master_recipe <- recipe_list[[target]]
 n_total <- nrow(master_recipe)
 chunk_indices <- split(1:n_total, ceiling(seq_along(1:n_total) / chunk_size))
 
-# 再開するチャンク番号（完了済みチャンクの次から）
 start_chunk <- 1
 
 clusterEvalQ(cl, {
@@ -66,7 +65,7 @@ clusterExport(cl, c("c_rmse", "rmse", "gen_fun", "generate_sigma_wrapper",
 
 cat("Resuming simulation from chunk", start_chunk, "of", length(chunk_indices), "...\n")
 
-# --- メインループ ---
+# --- main loop ---
 for(j in start_chunk:length(chunk_indices)) {
   print(j)
   idx_j <- chunk_indices[[j]]
@@ -75,7 +74,7 @@ for(j in start_chunk:length(chunk_indices)) {
   
   result_df_j <- foreach(ln = 1:LN_j, .packages = c("MASS", "glmnet", "lars", "Matrix")) %dopar% {
     
-    # エラーが出てもスキップして続行
+    # record errors and continue
     tryCatch({
       
       pattern <- Plars_j[ln, ]
@@ -89,7 +88,7 @@ for(j in start_chunk:length(chunk_indices)) {
       has_warning_lars <- 0
       warning_msg_def <- ""
       
-      # lassoの計算
+      # glmnet (default)
       set.seed(seed)
       st <- Sys.time()
       lassocv <- cv.glmnet(data_list_ln$x, data_list_ln$y, family="gaussian", alpha=1)
@@ -107,9 +106,9 @@ for(j in start_chunk:length(chunk_indices)) {
       rmse_def <- c_rmse(pred1, data_list_ln$ytest)
       time <- as.numeric(difftime(gt, st, units="secs"))
       
-      # LARSの計算
+      # LARS
       set.seed(seed)
-      if (n != p) {#!に変更, 2026/07/07
+      if (n != p) {
         st <- Sys.time()
         cvlars <- cv.lars(data_list_ln$x, data_list_ln$y, plot.it=FALSE, type="lasso", mode="fraction")
         withCallingHandlers({
@@ -140,7 +139,7 @@ for(j in start_chunk:length(chunk_indices)) {
         timel <- as.numeric(difftime(gt, st, units="secs"))
       }
       
-      # 係数の誤差計算用 candidate 作成
+      # reference lambdas (candidate) for SPE
       lmax <- max(model1$lambda)
       candidate <- exp(seq(from=log(0.001), to=log(lmax), length.out=20))
       candidate[1] <- 0
@@ -246,7 +245,7 @@ for(j in start_chunk:length(chunk_indices)) {
       list(lars_list=lars_res, glmnet_list=list(glmnet_df=glmnet_df), warning_list=warning_log)
       
     }, error = function(e) {
-      # エラーが出たタスクはエラー情報を記録してスキップ
+      # record the failed task and skip it
       list(
         error = TRUE,
         error_msg = conditionMessage(e),
@@ -257,10 +256,10 @@ for(j in start_chunk:length(chunk_indices)) {
     })
   }
   
-  # チャンクごとに保存
+  # save each chunk
   saveRDS(result_df_j, file=file.path(save_dir, paste0("res_chunk_", j, ".rds")))
   
-  # エラーが発生したタスクを報告
+  # report failed tasks
   error_tasks <- which(sapply(result_df_j, function(x) isTRUE(x$error)))
   if(length(error_tasks) > 0) {
     cat(sprintf("[%s] Chunk %d: %d task(s) failed (ln = %s)\n",
