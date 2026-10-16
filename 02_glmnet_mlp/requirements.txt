@@ -1,0 +1,10 @@
+# Python packages used to train glmnet-MLP (versions of the training run were
+# not recorded; the training was run on a CUDA GPU with PyTorch 2.x).
+torch
+optuna
+botorch
+gpytorch
+scikit-learn
+pandas
+numpy
+matplotlib

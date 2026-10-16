@@ -1,0 +1,5 @@
+Computation time recorded when the stored reconstructions were produced
+(Figure 8 caption; includes cross-validation):
+  glmnet (default)  : 0.5728447 secs
+  glmnet (proposed) : 11.41881 secs
+  LARS              : 51.0121 secs

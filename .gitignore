@@ -1,0 +1,10 @@
+.Rproj.user/
+.Rhistory
+.RData
+.Ruserdata
+.DS_Store
+__pycache__/
+*.pyc
+
+# uncompressed copy of the summary dataset (distributed as .csv.gz)
+01_summary_dataset/summary_dataset.csv

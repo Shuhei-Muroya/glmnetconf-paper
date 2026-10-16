@@ -1,0 +1,2 @@
+input_size,hidden_sizes,output_size,eig_k
+24,"[49, 63, 32]",2,10
