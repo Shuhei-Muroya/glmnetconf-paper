@@ -54,19 +54,15 @@ compses_glmnetconf <- function(original,Psi,N=256,seed=1,save=FALSE,folder_name 
   minn<-min(model_def$lambda)
   len_model1_lambda<-length(model_def$lambda)
   model1_lambda<-model_def$lambda
-  if(pl==0){
+  # lambda sequence: the default sequence extended by equally spaced values
+  # from its minimum to 0 (Sec. 3.2), as in the other experiments
+  if(pl<len_model1_lambda){
     lam<-model1_lambda
-  }else if(pl<len_model1_lambda){
-    add<-seq(minn,0,by=-(minn/(100-len_model1_lambda)))[-1]# (overwritten on the next line)
-    # lambda sequence of length pl
-    add<-seq(minn,0,length.out=pl)
-    lam<-add
   }else{
-    add<-seq(minn,0,by=-(minn/(pl-len_model1_lambda)))[-1]# extend the default sequence towards 0
-    lam<-c(model1_lambda,add)# extended lambda sequence
+    add<-seq(minn,0,by=-(minn/(pl-len_model1_lambda)))[-1]
+    lam<-c(model1_lambda,add)
   }
-  
-  pl_l<-length(lam)
+
   st<-Sys.time()
   cv_set<-cv.glmnet(X,y,family = "gaussian",alpha = 1,intercept=FALSE,thresh=t,lambda=lam)
   model1_set<-glmnet(X,y,family = "gaussian",alpha = 1,intercept=FALSE,thresh=t,lambda=lam)

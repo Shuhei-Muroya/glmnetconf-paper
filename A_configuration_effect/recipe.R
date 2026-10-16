@@ -38,16 +38,12 @@ make_config_grid <- function(p, thresh_range, n_grid_pts, nlam_min, nlam_max_mul
 }
 
 # ---- recipe with one dataset per row ----
-# require_size: if given, keep only (n, p) pairs where n or p equals it
 make_recipe <- function(N_vector, p_vector, case_settings, other_fixed,
                         n_rep, base_seed, seed_upper,
-                        pattern_id_offset = 0, require_size = NULL) {
+                        pattern_id_offset = 0) {
   
   Np_grid <- expand.grid(n = N_vector, p = p_vector, stringsAsFactors = FALSE)
   Np_grid <- Np_grid[Np_grid$n != Np_grid$p, ]
-  if (!is.null(require_size)) {
-    Np_grid <- Np_grid[Np_grid$n == require_size | Np_grid$p == require_size, ]
-  }
   rownames(Np_grid) <- NULL
   
   data_recipe <- merge(Np_grid, case_settings, by = NULL)

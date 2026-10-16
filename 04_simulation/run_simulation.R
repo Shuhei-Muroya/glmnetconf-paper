@@ -20,10 +20,6 @@ save_dir <- file.path("04_simulation", "results")
 dir.create(save_dir, recursive = TRUE, showWarnings = FALSE)
 
 
-# tune_configuration() defaults: T_hope = 20 s, K = 1000 (not passed explicitly)
-T_hope<-20
-K<-1000 # number of sampled configurations
-
 core_n <- 20
 cl <- makeCluster(core_n)
 registerDoParallel(cl)
@@ -177,6 +173,7 @@ for(j in start_chunk:length(chunk_indices)) {
       )
       
       # configuration of glmnet (proposed) tuned by glmnetconf
+      # (defaults of tune_configuration(): T_hope = 20 s, K = 1000)
       config <- tune_configuration(data_list_ln$x,seed=1,message = TRUE,line=FALSE)
       thresh_vec <- config$best_configuration$thresh
       plam <- floor(config$best_configuration$nlambda)

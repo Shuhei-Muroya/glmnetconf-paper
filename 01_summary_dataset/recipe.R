@@ -47,8 +47,6 @@ SNR_vector <-exp(seq(log(0.05),log(6),length=5))
 
 # Covariance structure ----------------------------------------------------
 
-n_param_variants <- 5
-
 rho_vector     <- c(0,0.3,0.9)       # compound symmetry / AR(1)
 sprate_vector  <- c(0.01, 0.05, 0.1)       # sparse random
 m_vector       <- c(1, 2, 4)                 # scale-free (Barabasi-Albert), m

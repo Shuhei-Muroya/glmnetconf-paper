@@ -63,7 +63,6 @@ def make_x_colname(eig_k):
 
 # GPU
 # gpu_id: index of the GPU (see nvidia-smi)
-# (the RTX PRO 6000 (sm_120) is not supported by PyTorch 2.6, so the A400 (GPU 1, sm_86) was used)
 gpu_id = 1
 if torch.cuda.is_available() and gpu_id < torch.cuda.device_count():
     device = torch.device(f'cuda:{gpu_id}')

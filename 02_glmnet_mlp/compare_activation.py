@@ -31,6 +31,8 @@ import matplotlib.pyplot as plt
 # =========================
 # activation function: "swish" / "relu" / "tanh"
 #    (also used in the output folder name)
+# NOTE: the script was run three times, changing ACTIVATION to "swish", "relu"
+#       and "tanh" (the value below is the setting of the last run).
 ACTIVATION = "tanh"
 
 filename        = "../01_summary_dataset/summary_dataset"
@@ -46,6 +48,7 @@ foldername_base = f"results_activation_{ACTIVATION}"
 
 # numbers of eigenvalue features to run, in this order
 # e.g. [10, 5, 1]: top/bottom 10, then top/bottom 5, then top/bottom 1
+# NOTE: the activation comparison used the top/bottom 10 eigenvalues only.
 EIG_K_LIST = [10]
 
 y_colname = ['time_glmnet', 'SPE_glmnet']
@@ -83,7 +86,6 @@ activation_cls = ACTIVATIONS[ACTIVATION]
 
 # GPU
 # gpu_id: index of the GPU (see nvidia-smi)
-# (the RTX PRO 6000 (sm_120) is not supported by PyTorch 2.6, so the A400 (GPU 1, sm_86) was used)
 gpu_id = 1
 if torch.cuda.is_available() and gpu_id < torch.cuda.device_count():
     device = torch.device(f'cuda:{gpu_id}')
