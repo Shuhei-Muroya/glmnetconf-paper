@@ -2,7 +2,7 @@
 # Section 4.3.2 / Table 1: DeepCDR / GDSC, drug GDSC ID 1008
 # (N = 475 cell lines, p = 697 genes, target = ln IC50)
 # 10 random 9:1 train/test splits; glmnet (default), glmnet (proposed,
-# T_hope = 5 s) and LARS. Output: 06_real_data/results/deepcdr_gdsc1008_Thope5.csv
+# T_hope = 10 s) and LARS. Output: 06_real_data/results/deepcdr_gdsc1008_Thope10.csv
 #
 # Run from the repository root (after prepare_deepcdr_gdsc.R).
 # =============================================================================
@@ -17,7 +17,7 @@ data_file    <- file.path("06_real_data", "data", "deepcdr_gdsc1008.csv")
 train_ratio  <- 0.9
 n_rep        <- 10
 base_seed    <- 1
-T_hope       <- 5                            # Table 1 (a run with 10 gave the same RMSE/SPE)
+T_hope       <- 10
 sparse_tol   <- 0                            # raise to 1e-8 if LARS looks noisy
 out_dir      <- file.path("06_real_data", "results")
 

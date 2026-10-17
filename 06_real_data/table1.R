@@ -4,7 +4,7 @@
 # Run from the repository root.
 # =============================================================================
 res_files <- c(`NRW.115`     = file.path("06_real_data", "results", "nrw115_clay_Thope5.csv"),
-               `DeepCDR/GDSC` = file.path("06_real_data", "results", "deepcdr_gdsc1008_Thope5.csv"))
+               `DeepCDR/GDSC` = file.path("06_real_data", "results", "deepcdr_gdsc1008_Thope10.csv"))
 
 methods <- c(default = "glmnet (default)", glmnet = "glmnet (proposed)", lars = "LARS")
 
