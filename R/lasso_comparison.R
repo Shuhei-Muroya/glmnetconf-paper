@@ -50,8 +50,8 @@ run_lasso_comparison <- function(y, x, ytest, xtest,
   #    mode = "step" if n == p, otherwise mode = "fraction"
   # =================================================================
   if (!is.null(seed)) set.seed(seed)
-  lars_mode <- if (n == p) "fraction" else "step"
-  if (n == p) {
+  lars_mode <- if (n != p) "fraction" else "step"
+  if (n != p) {
     if (!is.null(seed)) set.seed(seed)
     st <- Sys.time()
     cvlars <- cv.lars(x, y, plot.it = FALSE, type = "lasso", mode = "fraction")
@@ -195,7 +195,7 @@ count_sparsity <- function(res, tol = 0) {
   b_def  <- as.vector(as.matrix(coef.glmnet(mod$default, s = s$best_lambda_default)))[-1]
   b_set  <- as.vector(as.matrix(coef.glmnet(mod$tuned,   s = s$best_lambda_glmnet)))[-1]
   b_lars <- as.vector(predict.lars(mod$lars, type = "coefficients",
-                                   mode = "step", s = s$best_step_lars)$coefficients)
+                                   mode = s$lars_mode, s = s$best_step_lars)$coefficients)
   
   nz_def  <- abs(b_def)  > tol
   nz_set  <- abs(b_set)  > tol
